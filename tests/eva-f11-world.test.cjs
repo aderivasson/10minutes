@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict');
+const {test}=require('node:test');
+const {newWorld,getVisibleObjects,getAccessibleObjects,seal,open}=require('../netlify/functions/scenarios/eva-ground.js');
+const v=w=>getVisibleObjects(w);
+test('F1.1: randomized single jam and four closed covers',()=>{for(let i=0;i<60;i++){const w=newWorld();assert.equal(w.version,2);assert.equal(Object.values(w.act).filter(x=>x==='JAMMED').length,1);assert.equal(w.act[w.faultLatch],'JAMMED');assert.equal(Object.values(w.latchCover).filter(x=>x==='CLOSED').length,4);assert.equal(w.pwr0,'ONLINE');}});
+test('T0 hides all panel internals',()=>{const w=newWorld({faultLatch:2});assert.deepEqual(v(w),['HATCH','HATCH_CONTROLS','MAINTENANCE_PANEL']);assert.deepEqual(getAccessibleObjects(w),v(w));});
+test('main panel reveals PWR0 and covers, no internals',()=>{const w=newWorld({faultLatch:2});w.hatchMaintenancePanel='OPEN';assert.deepEqual(v(w),['HATCH','HATCH_CONTROLS','MAINTENANCE_PANEL','PWR0','L1_COVER','L2_COVER','L3_COVER','L4_COVER']);});
+test('L2 exposes five components and service cover; L3 stays hidden',()=>{const w=newWorld({faultLatch:2});w.hatchMaintenancePanel='OPEN';w.latchCover[2]='OPEN';for(const id of ['PWR2','ACT2','LINK2','REL2','LATCH2','ACT2_COVER'])assert.ok(v(w).includes(id));assert.ok(!v(w).includes('ACT3'));assert.ok(!v(w).includes('ACT2_SCREW'));});
+test('screw appears only behind open ACT service cover, only at fault',()=>{const w=newWorld({faultLatch:2});w.hatchMaintenancePanel='OPEN';w.latchCover[2]='OPEN';w.actServiceCover[2]='OPEN';assert.ok(v(w).includes('ACT2_SCREW'));w.foreignObject='REMOVED';assert.ok(!v(w).includes('ACT2_SCREW'));});
+test('hidden service cover cannot reveal screw if L2 cover is closed',()=>{const w=newWorld({faultLatch:2});w.hatchMaintenancePanel='OPEN';w.actServiceCover[2]='OPEN';assert.ok(!v(w).includes('ACT2_SCREW'));});
+test('v2 encrypted roundtrip and explicit v1 rejection',()=>{process.env.EVA_STATE_SECRET='f11-test-secret';const w=newWorld({faultLatch:3});assert.deepEqual(open(seal(w)),w);assert.throws(()=>open(seal({...w,version:1})),/EVA_STATE_VERSION_UNSUPPORTED/);});
