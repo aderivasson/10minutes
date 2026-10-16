@@ -283,3 +283,22 @@ Maya receives conversation history, the current Ground message, and only authori
 P0 bounded actions are: `OPEN_HATCH_MAINTENANCE_PANEL`, `INSPECT_LATCH`, `CHECK_LOCAL_POWER`, `TEST_LATCH`, `OBSERVE_ACT`, `OBSERVE_LINK`, `OBSERVE_LATCH`, `OPEN_ACT_SERVICE_COVER`, `REMOVE_OBSTRUCTION`, `CLOSE_ACT_SERVICE_COVER`, `OPEN_HATCH`, `ENTER_STATION`.
 
 Actions execute sequentially and stop at the first failed prerequisite. `EVA_SAFE === true` is the sole authoritative success condition. `HATCH_READY` does not end the run; the player must still open the hatch and instruct Maya to enter the station.
+
+## EVA F1.1 — Physical World V2 foundation (UAT development only)
+
+`netlify/functions/scenarios/eva-physical-world.js` owns the new initial physical topology and derives visible/access objects from the authoritative World state. `eva-ground.js` imports `newWorld`, `getVisibleObjects` and `getAccessibleObjects` from this module. The encrypted token payload now uses `version: 2`; the existing AES-GCM key derivation and token wire format are unchanged. Legacy EVA V1 tokens are rejected with `EVA_STATE_VERSION_UNSUPPORTED` (new EVA session required).
+
+At T0 only HATCH, HATCH_CONTROLS and MAINTENANCE_PANEL are visible. Opening the main panel reveals PWR0 and four closed L1–L4 covers. Opening an Ln cover reveals its PWR/ACT/LINK/REL/LATCH components and ACT service cover. Opening that service cover reveals the interior and, only for the faulted assembly before removal, the stuck screw. The fault remains one randomized ACT_JAM per session. `discoveredObjects`, `completedActions`, and `learnedVocabulary` are initialized for later phases.
+
+**Checkpoint boundary:** F1.1 introduces topology and read-only derived visibility, but the legacy `execute()`, Interpreter and Maya still use RC5.1 behavior. Therefore this checkpoint is NOT a deployable gameplay release and does not yet guarantee perception firewall invariants. F1.2 must route all observations and action validation through the new topology. F1.3 must enforce the Maya boundary. F2 will add timed pending actions.
+
+Deterministic tests: `node --test tests/eva-f11-world.test.cjs`.
+
+## EVA F1.2 — Deterministic physical actions (non-deployable checkpoint)
+
+`eva-ground.js` now provides `observe(world, area, language)` and a gated `execute(world, intent, language)` using `getVisibleObjects`/`getAccessibleObjects` from F1.1. New physical actions include opening Ln and ACT covers, checking PWR0/PWRn/LINKn/LATCHn, testing ACT rotation without state mutation, removing a visible screw, and opening the hatch with automatic station entry on successful repair. `TEST_LATCH` remains a distinct legacy operation. Observation returns the complete currently visible inventory; inaccessible targets return non-diagnostic errors. Actions remain instantaneous.
+
+**Checkpoint boundary:** F1.3 must update the Interpreter instructions/schema, add turn-start visibility snapshot validation for compound commands, clarify ambiguous references, filter structured results sent to Maya (including removing internal codes), and make WORLD didascalies authoritative. Do not deploy F1.2 alone. No PROD modifications.
+
+## EVA F1.3 — Interpreter / Maya observation firewall
+EVA agent instructions are server-only in `netlify/functions/scenarios/eva-agent-instructions.js`. The interpreter maps natural language to bounded intents; `executeTurn()` validates initial-turn physical visibility and invokes deterministic WORLD actions. `speakMaya()` receives only authorized textual observations (not internal codes, POS telemetry, hidden World fields or exact timer) and produces dialogue only. The `action` field returned to the UI is deterministic WORLD feedback. V2 encrypted World tokens are required; V1 tokens are unsupported. F2 pending actions and O2 are not implemented.
